@@ -72,6 +72,7 @@ public:
     Q_PROPERTY(QGCPositionManager*  qgcPositionManger   READ qgcPositionManger      CONSTANT)
     Q_PROPERTY(MissionCommandTree*  missionCommandTree  READ missionCommandTree     CONSTANT)
     Q_PROPERTY(VideoManager*        videoManager        READ videoManager           CONSTANT)
+    Q_PROPERTY(MAVLinkLogManager*   mavlinkLogManager   READ mavlinkLogManager      CONSTANT)
 
     Q_PROPERTY(qreal                zOrderTopMost       READ zOrderTopMost          CONSTANT) ///< z order for top most items, toolbar, main window sub view
     Q_PROPERTY(qreal                zOrderWidgets       READ zOrderWidgets          CONSTANT) ///< z order value to widgets, for example: zoom controls, hud widgetss
@@ -87,7 +88,6 @@ public:
     Q_PROPERTY(qreal    baseFontPointSize       READ baseFontPointSize          WRITE setBaseFontPointSize          NOTIFY baseFontPointSizeChanged)
 
     // MavLink Protocol
-    Q_PROPERTY(bool     isMultiplexingEnabled   READ isMultiplexingEnabled      WRITE setIsMultiplexingEnabled      NOTIFY isMultiplexingEnabledChanged)
     Q_PROPERTY(bool     isVersionCheckEnabled   READ isVersionCheckEnabled      WRITE setIsVersionCheckEnabled      NOTIFY isVersionCheckEnabledChanged)
     Q_PROPERTY(int      mavlinkSystemID         READ mavlinkSystemID            WRITE setMavlinkSystemID            NOTIFY mavlinkSystemIDChanged)
 
@@ -111,6 +111,8 @@ public:
     /// Returns the string for distance units which has configued by user
     Q_PROPERTY(QString appSettingsDistanceUnitsString READ appSettingsDistanceUnitsString CONSTANT)
     Q_PROPERTY(QString appSettingsAreaUnitsString READ appSettingsAreaUnitsString CONSTANT)
+
+    Q_PROPERTY(QString qgcVersion READ qgcVersion CONSTANT)
 
     Q_INVOKABLE void    saveGlobalSetting       (const QString& key, const QString& value);
     Q_INVOKABLE QString loadGlobalSetting       (const QString& key, const QString& defaultValue);
@@ -167,6 +169,7 @@ public:
     QGCPositionManager*     qgcPositionManger   ()      { return _qgcPositionManager; }
     MissionCommandTree*     missionCommandTree  ()      { return _missionCommandTree; }
     VideoManager*           videoManager        ()      { return _videoManager; }
+    MAVLinkLogManager*      mavlinkLogManager   ()      { return _mavlinkLogManager; }
 
     qreal                   zOrderTopMost       ()      { return 1000; }
     qreal                   zOrderWidgets       ()      { return 100; }
@@ -179,7 +182,6 @@ public:
     bool    virtualTabletJoystick   () { return _virtualTabletJoystick; }
     qreal   baseFontPointSize       () { return _baseFontPointSize; }
 
-    bool    isMultiplexingEnabled   () { return _toolbox->mavlinkProtocol()->multiplexingEnabled(); }
     bool    isVersionCheckEnabled   () { return _toolbox->mavlinkProtocol()->versionCheckEnabled(); }
     int     mavlinkSystemID         () { return _toolbox->mavlinkProtocol()->getSystemId(); }
 
@@ -204,13 +206,14 @@ public:
     void    setVirtualTabletJoystick    (bool enabled);
     void    setBaseFontPointSize        (qreal size);
 
-    void    setIsMultiplexingEnabled    (bool enable);
     void    setIsVersionCheckEnabled    (bool enable);
     void    setMavlinkSystemID          (int  id);
 
     QString parameterFileExtension(void) const  { return QGCApplication::parameterFileExtension; }
     QString missionFileExtension(void) const    { return QGCApplication::missionFileExtension; }
     QString telemetryFileExtension(void) const  { return QGCApplication::telemetryFileExtension; }
+
+    QString qgcVersion(void) const { return qgcApp()->applicationVersion(); }
 
     // Overrides from QGCTool
     virtual void setToolbox(QGCToolbox* toolbox);
@@ -240,6 +243,7 @@ private:
     QGCPositionManager*     _qgcPositionManager;
     MissionCommandTree*     _missionCommandTree;
     VideoManager*           _videoManager;
+    MAVLinkLogManager*      _mavlinkLogManager;
 
     bool                    _virtualTabletJoystick;
     qreal                   _baseFontPointSize;

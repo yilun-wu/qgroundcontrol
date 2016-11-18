@@ -283,9 +283,13 @@ void PX4FirmwarePlugin::pauseVehicle(Vehicle* vehicle)
     cmd.target_component = vehicle->defaultComponentId();
 
     MAVLinkProtocol* mavlink = qgcApp()->toolbox()->mavlinkProtocol();
-    mavlink_msg_command_long_encode(mavlink->getSystemId(), mavlink->getComponentId(), &msg, &cmd);
+    mavlink_msg_command_long_encode_chan(mavlink->getSystemId(),
+                                         mavlink->getComponentId(),
+                                         vehicle->priorityLink()->mavlinkChannel(),
+                                         &msg,
+                                         &cmd);
 
-    vehicle->sendMessageOnPriorityLink(msg);
+    vehicle->sendMessageOnLink(vehicle->priorityLink(), msg);
 }
 
 void PX4FirmwarePlugin::guidedModeRTL(Vehicle* vehicle)
@@ -317,8 +321,12 @@ void PX4FirmwarePlugin::guidedModeOrbit(Vehicle* vehicle, const QGeoCoordinate& 
     cmd.param7 = centerCoord.isValid() ? centerCoord.altitude()  : NAN;
     cmd.target_system = vehicle->id();
     cmd.target_component = vehicle->defaultComponentId();
-    mavlink_msg_command_long_encode(mavlink->getSystemId(), mavlink->getComponentId(), &msg, &cmd);
-    vehicle->sendMessageOnPriorityLink(msg);
+    mavlink_msg_command_long_encode_chan(mavlink->getSystemId(),
+                                         mavlink->getComponentId(),
+                                         vehicle->priorityLink()->mavlinkChannel(),
+                                         &msg,
+                                         &cmd);
+    vehicle->sendMessageOnLink(vehicle->priorityLink(), msg);
 }
 
 void PX4FirmwarePlugin::guidedModeTakeoff(Vehicle* vehicle, double altitudeRel)
@@ -347,13 +355,17 @@ void PX4FirmwarePlugin::guidedModeTakeoff(Vehicle* vehicle, double altitudeRel)
     cmd.target_system = vehicle->id();
     cmd.target_component = vehicle->defaultComponentId();
 
-    mavlink_msg_command_long_encode(mavlink->getSystemId(), mavlink->getComponentId(), &msg, &cmd);
-    vehicle->sendMessageOnPriorityLink(msg);
+    mavlink_msg_command_long_encode_chan(mavlink->getSystemId(),
+                                         mavlink->getComponentId(),
+                                         vehicle->priorityLink()->mavlinkChannel(),
+                                         &msg,
+                                         &cmd);
+    vehicle->sendMessageOnLink(vehicle->priorityLink(), msg);
 }
 
 void PX4FirmwarePlugin::guidedModeGotoLocation(Vehicle* vehicle, const QGeoCoordinate& gotoCoord)
 {
-    if (qIsNaN(vehicle->altitudeRelative()->rawValue().toDouble())) {
+    if (qIsNaN(vehicle->altitudeAMSL()->rawValue().toDouble())) {
         qgcApp()->showMessage(QStringLiteral("Unable to go to location, vehicle position not known."));
         return;
     }
@@ -374,15 +386,23 @@ void PX4FirmwarePlugin::guidedModeGotoLocation(Vehicle* vehicle, const QGeoCoord
     cmd.target_component = vehicle->defaultComponentId();
 
     MAVLinkProtocol* mavlink = qgcApp()->toolbox()->mavlinkProtocol();
-    mavlink_msg_command_long_encode(mavlink->getSystemId(), mavlink->getComponentId(), &msg, &cmd);
+    mavlink_msg_command_long_encode_chan(mavlink->getSystemId(),
+                                         mavlink->getComponentId(),
+                                         vehicle->priorityLink()->mavlinkChannel(),
+                                         &msg,
+                                         &cmd);
 
-    vehicle->sendMessageOnPriorityLink(msg);
+    vehicle->sendMessageOnLink(vehicle->priorityLink(), msg);
 }
 
 void PX4FirmwarePlugin::guidedModeChangeAltitude(Vehicle* vehicle, double altitudeRel)
 {
-    if (qIsNaN(vehicle->altitudeRelative()->rawValue().toDouble())) {
-        qgcApp()->showMessage(QStringLiteral("Unable to change altitude, vehicle altitude not known."));
+    if (!vehicle->homePositionAvailable()) {
+        qgcApp()->showMessage(QStringLiteral("Unable to change altitude, home position unknown."));
+        return;
+    }
+    if (qIsNaN(vehicle->homePosition().altitude())) {
+        qgcApp()->showMessage(QStringLiteral("Unable to change altitude, home position altitude unknown."));
         return;
     }
 
@@ -397,14 +417,18 @@ void PX4FirmwarePlugin::guidedModeChangeAltitude(Vehicle* vehicle, double altitu
     cmd.param4 = NAN;
     cmd.param5 = NAN;
     cmd.param6 = NAN;
-    cmd.param7 = vehicle->altitudeAMSL()->rawValue().toDouble() + altitudeRel;
+    cmd.param7 = vehicle->homePosition().altitude() + altitudeRel;
     cmd.target_system = vehicle->id();
     cmd.target_component = vehicle->defaultComponentId();
 
     MAVLinkProtocol* mavlink = qgcApp()->toolbox()->mavlinkProtocol();
-    mavlink_msg_command_long_encode(mavlink->getSystemId(), mavlink->getComponentId(), &msg, &cmd);
+    mavlink_msg_command_long_encode_chan(mavlink->getSystemId(),
+                                         mavlink->getComponentId(),
+                                         vehicle->priorityLink()->mavlinkChannel(),
+                                         &msg,
+                                         &cmd);
 
-    vehicle->sendMessageOnPriorityLink(msg);
+    vehicle->sendMessageOnLink(vehicle->priorityLink(), msg);
 }
 
 void PX4FirmwarePlugin::setGuidedMode(Vehicle* vehicle, bool guidedMode)

@@ -279,6 +279,8 @@ public:
     Q_PROPERTY(bool                 coaxialMotors           READ coaxialMotors                                          CONSTANT)
     Q_PROPERTY(bool                 xConfigMotors           READ xConfigMotors                                          CONSTANT)
     Q_PROPERTY(bool                 isOfflineEditingVehicle READ isOfflineEditingVehicle                                CONSTANT)
+    Q_PROPERTY(QString              brandImage              READ brandImage                                             CONSTANT)
+    Q_PROPERTY(QStringList          unhealthySensors        READ unhealthySensors                                       NOTIFY unhealthySensorsChanged)
 
     /// true: Vehicle is flying, false: Vehicle is on ground
     Q_PROPERTY(bool flying      READ flying     WRITE setFlying     NOTIFY flyingChanged)
@@ -430,10 +432,6 @@ public:
     /// @return true: message sent, false: Link no longer connected
     bool sendMessageOnLink(LinkInterface* link, mavlink_message_t message);
 
-    /// Sends a message to the priority link
-    /// @return true: message sent, false: Link no longer connected
-    bool sendMessageOnPriorityLink(mavlink_message_t message) { return sendMessageOnLink(priorityLink(), message); }
-
     /// Sends the specified messages multiple times to the vehicle in order to attempt to
     /// guarantee that it makes it to the vehicle.
     void sendMessageMultiple(mavlink_message_t message);
@@ -488,6 +486,10 @@ public:
 
     int  flowImageIndex() { return _flowImageIndex; }
 
+    //-- Mavlink Logging
+    void startMavlinkLog();
+    void stopMavlinkLog();
+
     /// Requests the specified data stream from the vehicle
     ///     @param stream Stream which is being requested
     ///     @param rate Rate at which to send stream in Hz
@@ -528,6 +530,8 @@ public:
     uint8_t         baseMode                () const { return _base_mode; }
     uint32_t        customMode              () const { return _custom_mode; }
     bool            isOfflineEditingVehicle () const { return _offlineEditingVehicle; }
+    QString         brandImage              () const;
+    QStringList     unhealthySensors        () const;
 
     Fact* roll              (void) { return &_rollFact; }
     Fact* heading           (void) { return &_headingFact; }
@@ -602,6 +606,7 @@ signals:
     void prearmErrorChanged(const QString& prearmError);
     void commandLongAck(uint8_t compID, uint16_t command, uint8_t result);
     void soloFirmwareChanged(bool soloFirmware);
+    void unhealthySensorsChanged(void);
 
     void messagesReceivedChanged    ();
     void messagesSentChanged        ();
@@ -639,6 +644,9 @@ signals:
     void mavlinkScaledImu1(mavlink_message_t message);
     void mavlinkScaledImu2(mavlink_message_t message);
     void mavlinkScaledImu3(mavlink_message_t message);
+
+    // Mavlink Log Download
+    void mavlinkLogData (Vehicle* vehicle, uint8_t target_system, uint8_t target_component, uint16_t sequence, uint8_t first_message, QByteArray data, bool acked);
 
 private slots:
     void _mavlinkMessageReceived(LinkInterface* link, mavlink_message_t message);
@@ -687,7 +695,7 @@ private:
     void _handleVibration(mavlink_message_t& message);
     void _handleExtendedSysState(mavlink_message_t& message);
     void _handleCommandAck(mavlink_message_t& message);
-    void _handleAutopilotVersion(mavlink_message_t& message);
+    void _handleAutopilotVersion(LinkInterface* link, mavlink_message_t& message);
     void _handleHilActuatorControls(mavlink_message_t& message);
     void _missionManagerError(int errorCode, const QString& errorMsg);
     void _geoFenceManagerError(int errorCode, const QString& errorMsg);
@@ -697,6 +705,9 @@ private:
     void _connectionActive(void);
     void _say(const QString& text);
     QString _vehicleIdSpeech(void);
+    void _handleMavlinkLoggingData(mavlink_message_t& message);
+    void _handleMavlinkLoggingDataAcked(mavlink_message_t& message);
+    void _ackMavlinkLogData(uint16_t sequence);
 
 private:
     int     _id;                    ///< Mavlink system id
@@ -743,6 +754,10 @@ private:
     double          _rcRSSIstore;
     bool            _autoDisconnect;    ///< true: Automatically disconnect vehicle when last connection goes away or lost heartbeat
     bool            _flying;
+    uint32_t        _onboardControlSensorsPresent;
+    uint32_t        _onboardControlSensorsEnabled;
+    uint32_t        _onboardControlSensorsHealth;
+    uint32_t        _onboardControlSensorsUnhealthy;
 
     QString             _prearmError;
     QTimer              _prearmErrorTimer;

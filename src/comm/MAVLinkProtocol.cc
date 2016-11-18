@@ -51,13 +51,7 @@ const char* MAVLinkProtocol::_logFileExtension = "mavlink";             ///< Ext
  */
 MAVLinkProtocol::MAVLinkProtocol(QGCApplication* app)
     : QGCTool(app)
-    , m_multiplexingEnabled(false)
     , m_enable_version_check(true)
-    , m_paramRetransmissionTimeout(350)
-    , m_paramRewriteTimeout(500)
-    , m_paramGuardEnabled(true)
-    , m_actionGuardEnabled(false)
-    , m_actionRetransmissionTimeout(100)
     , versionMismatchIgnore(false)
     , systemId(255)
 #ifndef __mobile__
@@ -79,7 +73,7 @@ MAVLinkProtocol::MAVLinkProtocol(QGCApplication* app)
 MAVLinkProtocol::~MAVLinkProtocol()
 {
     storeSettings();
-    
+
 #ifndef __mobile__
     _closeLogFile();
 #endif
@@ -124,7 +118,6 @@ void MAVLinkProtocol::loadSettings()
     QSettings settings;
     settings.beginGroup("QGC_MAVLINK_PROTOCOL");
     enableVersionCheck(settings.value("VERSION_CHECK_ENABLED", m_enable_version_check).toBool());
-    enableMultiplexing(settings.value("MULTIPLEXING_ENABLED", m_multiplexingEnabled).toBool());
 
     // Only set system id if it was valid
     int temp = settings.value("GCS_SYSTEM_ID", systemId).toInt();
@@ -132,15 +125,6 @@ void MAVLinkProtocol::loadSettings()
     {
         systemId = temp;
     }
-
-    // Parameter interface settings
-    bool ok;
-    temp = settings.value("PARAMETER_RETRANSMISSION_TIMEOUT", m_paramRetransmissionTimeout).toInt(&ok);
-    if (ok) m_paramRetransmissionTimeout = temp;
-    temp = settings.value("PARAMETER_REWRITE_TIMEOUT", m_paramRewriteTimeout).toInt(&ok);
-    if (ok) m_paramRewriteTimeout = temp;
-    m_paramGuardEnabled = settings.value("PARAMETER_TRANSMISSION_GUARD_ENABLED", m_paramGuardEnabled).toBool();
-    settings.endGroup();
 }
 
 void MAVLinkProtocol::storeSettings()
@@ -149,18 +133,13 @@ void MAVLinkProtocol::storeSettings()
     QSettings settings;
     settings.beginGroup("QGC_MAVLINK_PROTOCOL");
     settings.setValue("VERSION_CHECK_ENABLED", m_enable_version_check);
-    settings.setValue("MULTIPLEXING_ENABLED", m_multiplexingEnabled);
     settings.setValue("GCS_SYSTEM_ID", systemId);
     // Parameter interface settings
-    settings.setValue("PARAMETER_RETRANSMISSION_TIMEOUT", m_paramRetransmissionTimeout);
-    settings.setValue("PARAMETER_REWRITE_TIMEOUT", m_paramRewriteTimeout);
-    settings.setValue("PARAMETER_TRANSMISSION_GUARD_ENABLED", m_paramGuardEnabled);
-    settings.endGroup();
 }
 
 void MAVLinkProtocol::resetMetadataForLink(const LinkInterface *link)
 {
-    int channel = link->getMavlinkChannel();
+    int channel = link->mavlinkChannel();
     totalReceiveCounter[channel] = 0;
     totalLossCounter[channel] = 0;
     totalErrorCounter[channel] = 0;
@@ -183,12 +162,12 @@ void MAVLinkProtocol::receiveBytes(LinkInterface* link, QByteArray b)
     if (!_linkMgr->links()->contains(link)) {
         return;
     }
-    
+
 //    receiveMutex.lock();
     mavlink_message_t message;
     mavlink_status_t status;
 
-    int mavlinkChannel = link->getMavlinkChannel();
+    int mavlinkChannel = link->mavlinkChannel();
 
     static int mavlink09Count = 0;
     static int nonmavlinkCount = 0;
@@ -233,19 +212,16 @@ void MAVLinkProtocol::receiveBytes(LinkInterface* link, QByteArray b)
         }
         if (decodeState == 1)
         {
-            decodedFirstPacket = true;
-
-            if(message.msgid == MAVLINK_MSG_ID_PING)
-            {
-                // process ping requests (tgt_system and tgt_comp must be zero)
-                mavlink_ping_t ping;
-                mavlink_msg_ping_decode(&message, &ping);
-                if(!ping.target_system && !ping.target_component)
-                {
-                    mavlink_message_t msg;
-                    mavlink_msg_ping_pack(getSystemId(), getComponentId(), &msg, ping.time_usec, ping.seq, message.sysid, message.compid);
-                    _sendMessage(msg);
+            if(!decodedFirstPacket) {
+                mavlink_status_t* mavlinkStatus = mavlink_get_channel_status(mavlinkChannel);
+                if (!(mavlinkStatus->flags & MAVLINK_STATUS_FLAG_IN_MAVLINK1) && (mavlinkStatus->flags & MAVLINK_STATUS_FLAG_OUT_MAVLINK1)) {
+                    qDebug() << "switch to mavlink 2.0" << mavlinkStatus << mavlinkChannel << mavlinkStatus->flags;
+                    mavlinkStatus->flags &= ~MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+                } else if ((mavlinkStatus->flags & MAVLINK_STATUS_FLAG_IN_MAVLINK1) && !(mavlinkStatus->flags & MAVLINK_STATUS_FLAG_OUT_MAVLINK1)) {
+                    qDebug() << "switch to mavlink 1.0" << mavlinkStatus << mavlinkChannel << mavlinkStatus->flags;
+                    mavlinkStatus->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
                 }
+                decodedFirstPacket = true;
             }
 
             if(message.msgid == MAVLINK_MSG_ID_RADIO_STATUS)
@@ -280,7 +256,7 @@ void MAVLinkProtocol::receiveBytes(LinkInterface* link, QByteArray b)
 
 #ifndef __mobile__
             // Log data
-            
+
             if (!_logSuspendError && !_logSuspendReplay && _tempLogFile.isOpen()) {
                 uint8_t buf[MAVLINK_MAX_PACKET_LEN+sizeof(quint64)];
 
@@ -305,7 +281,7 @@ void MAVLinkProtocol::receiveBytes(LinkInterface* link, QByteArray b)
                     _stopLogging();
                     _logSuspendError = true;
                 }
-                
+
                 // Check for the vehicle arming going by. This is used to trigger log save.
                 if (!_logPromptForSave && message.msgid == MAVLINK_MSG_ID_HEARTBEAT) {
                     mavlink_heartbeat_t state;
@@ -375,19 +351,6 @@ void MAVLinkProtocol::receiveBytes(LinkInterface* link, QByteArray b)
             // kind of inefficient, but no issue for a groundstation pc.
             // It buys as reentrancy for the whole code over all threads
             emit messageReceived(link, message);
-
-            // Multiplex message if enabled
-            if (m_multiplexingEnabled)
-            {
-                // Emit message on all links that are currently connected
-                for (int i=0; i<_linkMgr->links()->count(); i++) {
-                    LinkInterface* currLink = _linkMgr->links()->value<LinkInterface*>(i);
-
-                    // Only forward this message to the other links,
-                    // not the link the message was received on
-                    if (currLink && currLink != link) _sendMessage(currLink, message, message.sysid, message.compid);
-                }
-            }
         }
     }
 }
@@ -415,110 +378,6 @@ void MAVLinkProtocol::setSystemId(int id)
 int MAVLinkProtocol::getComponentId()
 {
     return 0;
-}
-
-/**
- * @param message message to send
- */
-void MAVLinkProtocol::_sendMessage(mavlink_message_t message)
-{
-    for (int i=0; i<_linkMgr->links()->count(); i++) {
-        LinkInterface* link = _linkMgr->links()->value<LinkInterface*>(i);
-        _sendMessage(link, message);
-    }
-}
-
-/**
- * @param link the link to send the message over
- * @param message message to send
- */
-void MAVLinkProtocol::_sendMessage(LinkInterface* link, mavlink_message_t message)
-{
-    // Create buffer
-    static uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    // Rewriting header to ensure correct link ID is set
-    static uint8_t messageKeys[256] = MAVLINK_MESSAGE_CRCS;
-    mavlink_finalize_message_chan(&message, this->getSystemId(), this->getComponentId(), link->getMavlinkChannel(), message.len, message.len, messageKeys[message.msgid]);
-    // Write message into buffer, prepending start sign
-    int len = mavlink_msg_to_send_buffer(buffer, &message);
-    // If link is connected
-    if (link->isConnected())
-    {
-        // Send the portion of the buffer now occupied by the message
-        link->writeBytesSafe((const char*)buffer, len);
-    }
-}
-
-/**
- * @param link the link to send the message over
- * @param message message to send
- * @param systemid id of the system the message is originating from
- * @param componentid id of the component the message is originating from
- */
-void MAVLinkProtocol::_sendMessage(LinkInterface* link, mavlink_message_t message, quint8 systemid, quint8 componentid)
-{
-    // Create buffer
-    static uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    // Rewriting header to ensure correct link ID is set
-    static uint8_t messageKeys[256] = MAVLINK_MESSAGE_CRCS;
-    mavlink_finalize_message_chan(&message, systemid, componentid, link->getMavlinkChannel(), message.len, message.len, messageKeys[message.msgid]);
-    // Write message into buffer, prepending start sign
-    int len = mavlink_msg_to_send_buffer(buffer, &message);
-    // If link is connected
-    if (link->isConnected())
-    {
-        // Send the portion of the buffer now occupied by the message
-        link->writeBytesSafe((const char*)buffer, len);
-    }
-}
-
-void MAVLinkProtocol::enableMultiplexing(bool enabled)
-{
-    bool changed = false;
-    if (enabled != m_multiplexingEnabled) changed = true;
-
-    m_multiplexingEnabled = enabled;
-    if (changed) emit multiplexingChanged(m_multiplexingEnabled);
-}
-
-void MAVLinkProtocol::enableParamGuard(bool enabled)
-{
-    if (enabled != m_paramGuardEnabled) {
-        m_paramGuardEnabled = enabled;
-        emit paramGuardChanged(m_paramGuardEnabled);
-    }
-}
-
-void MAVLinkProtocol::enableActionGuard(bool enabled)
-{
-    if (enabled != m_actionGuardEnabled) {
-        m_actionGuardEnabled = enabled;
-        emit actionGuardChanged(m_actionGuardEnabled);
-    }
-}
-
-void MAVLinkProtocol::setParamRetransmissionTimeout(int ms)
-{
-    if (ms != m_paramRetransmissionTimeout) {
-        m_paramRetransmissionTimeout = ms;
-        emit paramRetransmissionTimeoutChanged(m_paramRetransmissionTimeout);
-    }
-}
-
-void MAVLinkProtocol::setParamRewriteTimeout(int ms)
-{
-    if (ms != m_paramRewriteTimeout) {
-        m_paramRewriteTimeout = ms;
-        emit paramRewriteTimeoutChanged(m_paramRewriteTimeout);
-    }
-}
-
-void MAVLinkProtocol::setActionRetransmissionTimeout(int ms)
-{
-    if (ms != m_actionRetransmissionTimeout) {
-        m_actionRetransmissionTimeout = ms;
-        emit actionRetransmissionTimeoutChanged(m_actionRetransmissionTimeout);
-    }
 }
 
 void MAVLinkProtocol::enableVersionCheck(bool enabled)
@@ -554,7 +413,7 @@ bool MAVLinkProtocol::_closeLogFile(void)
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -600,11 +459,11 @@ void MAVLinkProtocol::_stopLogging(void)
 void MAVLinkProtocol::checkForLostLogFiles(void)
 {
     QDir tempDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation));
-    
+
     QString filter(QString("*.%1").arg(_logFileExtension));
     QFileInfoList fileInfoList = tempDir.entryInfoList(QStringList(filter), QDir::Files);
     qDebug() << "Orphaned log file count" << fileInfoList.count();
-    
+
     foreach(const QFileInfo fileInfo, fileInfoList) {
         qDebug() << "Orphaned log file" << fileInfo.filePath();
         if (fileInfo.size() == 0) {
@@ -630,10 +489,10 @@ void MAVLinkProtocol::suspendLogForReplay(bool suspend)
 void MAVLinkProtocol::deleteTempLogFiles(void)
 {
     QDir tempDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation));
-    
+
     QString filter(QString("*.%1").arg(_logFileExtension));
     QFileInfoList fileInfoList = tempDir.entryInfoList(QStringList(filter), QDir::Files);
-    
+
     foreach(const QFileInfo fileInfo, fileInfoList) {
         QFile::remove(fileInfo.filePath());
     }

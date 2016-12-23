@@ -140,10 +140,10 @@ Item {
     }
 
     QGCLabel {
-        id:         flyLabel
-        text:       qsTr("Fly")
-        color:      mapPal.text
-        visible:    !ScreenTools.isShortScreen
+        id:                         flyLabel
+        text:                       qsTr("Fly")
+        color:                      mapPal.text
+        visible:                    !ScreenTools.isShortScreen && _mainIsMap
         anchors.topMargin:          _toolButtonTopMargin
         anchors.horizontalCenter:   toolColumn.horizontalCenter
         anchors.top:                parent.top
@@ -437,7 +437,7 @@ Item {
                 break;
             case confirmChangeAlt:
                 altitudeSlider.visible = true
-                altitudeSlider.setInitialValueAppSettingsDistanceUnits(_activeVehicle.altitudeAMSL.value)
+                altitudeSlider.setInitialValueAppSettingsDistanceUnits(_activeVehicle.altitudeRelative.value)
                 guidedModeConfirm.confirmText = qsTr("change altitude")
                 break;
             case confirmGoTo:

@@ -131,7 +131,7 @@ QGCView {
 
     function addMissionItemCoordsForFit(coordList) {
         for (var i=1; i<qgcView._visualItems.count; i++) {
-            missionItem = qgcView._visualItems.get(i)
+            var missionItem = qgcView._visualItems.get(i)
             if (missionItem.specifiesCoordinate && !missionItem.isStandaloneCoordinate) {
                 coordList.push(missionItem.coordinate)
             }
@@ -145,14 +145,14 @@ QGCView {
     }
 
     function addFenceItemCoordsForFit(coordList) {
-        if (geoFenceController.circleSupported) {
+        if (geoFenceController.circleEnabled) {
             var azimuthList = [ 0, 180, 90, 270 ]
             for (var i=0; i<azimuthList.length; i++) {
-                var edgeCoordinate = homePos.coordinate.atDistanceAndAzimuth(geoFenceController.circleRadius, azimuthList[i])
+                var edgeCoordinate = _visualItems.get(0).coordinate.atDistanceAndAzimuth(geoFenceController.circleRadius, azimuthList[i])
                 coordList.push(edgeCoordinate)
             }
         }
-        if (geoFenceController.polygonSupported && geoFenceController.polygon.count() > 2) {
+        if (geoFenceController.polygonEnabled && geoFenceController.polygon.count() > 2) {
             for (var i=0; i<geoFenceController.polygon.count(); i++) {
                 coordList.push(geoFenceController.polygon.path[i])
             }
@@ -477,7 +477,7 @@ QGCView {
                             }
                             break
                         case _layerGeoFence:
-                            if (geoFenceController.breachReturnSupported) {
+                            if (geoFenceController.breachReturnEnabled) {
                                 geoFenceController.breachReturnPoint = coordinate
                                 geoFenceController.validateBreachReturn()
                             }
@@ -732,7 +732,7 @@ QGCView {
                         onWheel:            wheel.accepted = true
                     }
 
-                    ListView {
+                    QGCListView {
                         id:             missionItemEditorListView
                         anchors.left:   parent.left
                         anchors.right:  parent.right
@@ -766,7 +766,7 @@ QGCView {
 
                             onMoveHomeToMapCenter: _visualItems.get(0).coordinate = editorMap.center
                         }
-                    } // ListView
+                    } // QGCListView
                 } // Item - Mission Item editor
 
                 // GeoFence Editor
@@ -786,8 +786,9 @@ QGCView {
                 MapPolygon {
                     border.color:   "#80FF0000"
                     border.width:   3
-                    path:           geoFenceController.polygonSupported ? geoFenceController.polygon.path : undefined
+                    path:           geoFenceController.polygon.path
                     z:              QGroundControl.zOrderMapItems
+                    visible:        geoFenceController.polygonEnabled
                 }
 
                 // GeoFence circle
@@ -795,15 +796,16 @@ QGCView {
                     border.color:   "#80FF0000"
                     border.width:   3
                     center:         missionController.plannedHomePosition
-                    radius:         geoFenceController.circleSupported ? geoFenceController.circleRadius : 0
+                    radius:         geoFenceController.circleRadius
                     z:              QGroundControl.zOrderMapItems
+                    visible:        geoFenceController.circleEnabled
                 }
 
                 // GeoFence breach return point
                 MapQuickItem {
                     anchorPoint:    Qt.point(sourceItem.width / 2, sourceItem.height / 2)
                     coordinate:     geoFenceController.breachReturnPoint
-                    visible:        geoFenceController.breachReturnSupported
+                    visible:        geoFenceController.breachReturnEnabled
                     sourceItem:     MissionItemIndexLabel { label: "F" }
                     z:              QGroundControl.zOrderMapItems
                 }
@@ -1052,7 +1054,6 @@ QGCView {
                     anchors.margins:    ScreenTools.defaultFontPixelHeight * (0.66)
                     anchors.bottom:     waypointValuesDisplay.visible ? waypointValuesDisplay.top : parent.bottom
                     anchors.left:       parent.left
-                    z:                  QGroundControl.zOrderWidgets
                     mapControl:         editorMap
                     visible:            !ScreenTools.isTinyScreen
                 }
@@ -1189,7 +1190,6 @@ QGCView {
                     Layout.fillWidth:   true
                     onClicked:  {
                         syncButton.hideDropDown()
-                        _syncDropDownController.removeAll()
                         qgcView.showDialog(removeAllPromptDialog, qsTr("Remove all"), qgcView.showDialogDefaultWidth, StandardButton.Yes | StandardButton.No)
                     }
                 }

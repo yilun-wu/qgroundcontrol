@@ -11,8 +11,9 @@
 #include "MockLink.h"
 #include "QGCLoggingCategory.h"
 #include "QGCApplication.h"
-#ifndef __mobile__
-#include "UnitTest.h"
+
+#ifdef UNITTEST_BUILD
+    #include "UnitTest.h"
 #endif
 
 #include <QTimer>
@@ -21,7 +22,8 @@
 
 #include <string.h>
 
-#include "px4_custom_mode.h"
+// FIXME: Hack to work around clean headers
+#include "FirmwarePlugin/PX4/px4_custom_mode.h"
 
 QGC_LOGGING_CATEGORY(MockLinkLog, "MockLinkLog")
 QGC_LOGGING_CATEGORY(MockLinkVerboseLog, "MockLinkVerboseLog")
@@ -805,6 +807,40 @@ void MockLink::_handleCommandLong(const mavlink_message_t& msg)
         commandResult = MAV_RESULT_ACCEPTED;
         _respondWithAutopilotVersion();
         break;
+    case MAV_CMD_USER_1:
+        // Test command which always returns MAV_RESULT_ACCEPTED
+        commandResult = MAV_RESULT_ACCEPTED;
+        break;
+    case MAV_CMD_USER_2:
+        // Test command which always returns MAV_RESULT_FAILED
+        commandResult = MAV_RESULT_FAILED;
+        break;
+    case MAV_CMD_USER_3:
+        // Test command which returns MAV_RESULT_ACCEPTED on second attempt
+        static bool firstCmdUser3 = true;
+        if (firstCmdUser3) {
+           firstCmdUser3 = false;
+           return;
+        } else {
+            firstCmdUser3 = true;
+            commandResult = MAV_RESULT_ACCEPTED;
+        }
+        break;
+    case MAV_CMD_USER_4:
+        // Test command which returns MAV_RESULT_FAILED on second attempt
+        static bool firstCmdUser4 = true;
+        if (firstCmdUser4) {
+           firstCmdUser4 = false;
+           return;
+        } else {
+            firstCmdUser4 = true;
+            commandResult = MAV_RESULT_FAILED;
+        }
+        break;
+    case MAV_CMD_USER_5:
+        // No response
+        return;
+        break;
     }
 
     mavlink_message_t commandAck;
@@ -1159,7 +1195,7 @@ void MockLink::_handleLogRequestData(const mavlink_message_t& msg)
     mavlink_msg_log_request_data_decode(&msg, &request);
 
     if (_logDownloadFilename.isEmpty()) {
-        #ifndef __mobile__
+        #ifdef UNITTEST_BUILD
         _logDownloadFilename = UnitTest::createRandomFile(_logDownloadFileSize);
         #endif
     }
